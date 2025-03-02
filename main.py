@@ -1,5 +1,6 @@
 import os
 import argparse
+from datetime import time
 from pathlib import Path
 
 from config.config import config
@@ -12,10 +13,56 @@ from train import train_trading_agent
 from backtest import run_backtest
 import torch
 
-print(f"CUDA verfügbar: {torch.cuda.is_available()}")
-if torch.cuda.is_available():
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Anzahl GPUs: {torch.cuda.device_count()}")
+import time
+import torch
+
+
+def check_cuda_availability():
+    """Überprüft und zeigt CUDA-Verfügbarkeit an."""
+    print("\n=== CUDA-Informationen ===")
+    print(f"PyTorch Version: {torch.__version__}")
+    print(f"CUDA verfügbar: {torch.cuda.is_available()}")
+    time.sleep(5)  # 5 Sekunden Pause nach der ersten Ausgabe
+
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+        print(f"Anzahl GPUs: {torch.cuda.device_count()}")
+
+        print(f"CUDA Version: {torch.version.cuda}")
+
+
+        # Speicherinformationen
+        print(f"Gesamt-GPU-Speicher: {torch.cuda.get_device_properties(0).total_memory / 1024 ** 3:.2f} GB")
+
+        print(f"Verfügbarer GPU-Speicher: {torch.cuda.memory_reserved(0) / 1024 ** 3:.2f} GB reserviert")
+
+
+        # CUDA-Optimierungen aktivieren
+        torch.backends.cudnn.benchmark = True
+        print("CUDA-Optimierungen (cudnn.benchmark) aktiviert")
+        time.sleep(5)
+    else:
+        print("CUDA ist nicht verfügbar. Training erfolgt auf CPU.")
+
+        print("Mögliche Gründe:")
+
+        print("1. Keine NVIDIA-GPU vorhanden")
+
+        print("2. NVIDIA-Treiber nicht installiert oder veraltet")
+
+        print("3. PyTorch ohne CUDA-Unterstützung installiert")
+
+        print("\nLösung für Punkt 3:")
+
+        print("pip uninstall torch")
+
+        print("pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+
+        print("(Ersetze cu118 mit deiner CUDA-Version)")
+
+
+    print("=" * 30)
 
 
 def parse_args():
@@ -50,10 +97,18 @@ def parse_args():
     parser.add_argument('--window-size', type=int,
                         help='Größe des Beobachtungsfensters')
 
+    parser.add_argument('--lookback', type=int, default=365,
+                        help='Wie viele Zeiteinheiten aus der Vergangenheit geladen werden sollen')
+
+    parser.add_argument('--timeframe', type=str, default='1D',
+                        choices=['1Min', '5Min', '15Min', '1H', '4H', '1D'],
+                        help='Zeitintervall der Daten (1Min, 5Min, 15Min, 1H, 4H, 1D)')
+
     return parser.parse_args()
 
 
 def main():
+    check_cuda_availability()
     """Hauptfunktion des Programms."""
     # Argumente parsen
     args = parse_args()
@@ -93,7 +148,12 @@ def main():
 
     # Daten laden
     data_loader = DataLoader(api)
-    df = data_loader.load_historical_data(symbol)
+    # In main.py
+    timeframe = args.timeframe or config_instance.get("trading", "timeframe", "1D")
+    lookback = args.lookback or config_instance.get("backtesting", "lookback_days", 365)
+
+    # Beim Laden der Daten
+    df = data_loader.load_historical_data(symbol, timeframe=timeframe, lookback=lookback)
 
     if df.empty:
         print(f"Keine Daten für {symbol} gefunden. Beende Programm.")

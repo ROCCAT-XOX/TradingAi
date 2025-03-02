@@ -12,6 +12,7 @@ Dieses Projekt implementiert einen Reinforcement Learning-Agenten für den autom
 - **Backtesting**: Bewertung der Strategie anhand historischer Daten
 - **Konfigurierbarkeit**: Einfaches Anpassen der Parameter über Konfigurationsdateien oder Kommandozeilenargumente
 - **Multi-Asset Support**: Training auf verschiedenen Vermögenswerten (BTC, ETH, SOL, Aktien, etc.)
+- **CUDA-Beschleunigung**: Optimierte Performance-Nutzung von NVIDIA GPUs für schnelleres Training
 
 ## Installation
 
@@ -32,7 +33,14 @@ Dieses Projekt implementiert einen Reinforcement Learning-Agenten für den autom
    pip install -r requirements.txt
    ```
 
-4. Konfiguration einrichten:
+4. Für GPU-Beschleunigung, installiere PyTorch mit CUDA-Unterstützung:
+   ```
+   pip uninstall torch
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   ```
+   (Ersetze cu118 mit deiner CUDA-Version)
+
+5. Konfiguration einrichten:
    - Bearbeite `config/settings.json` mit deinen API-Schlüsseln
    - Oder setze Umgebungsvariablen (empfohlen für mehr Sicherheit):
      ```
@@ -64,6 +72,8 @@ Weitere Optionen:
 - `--gamma 0.99`: Discount-Faktor für zukünftige Belohnungen setzen
 - `--window-size 20`: Größe des Beobachtungsfensters ändern
 - `--hidden-dim 256`: Größe der versteckten Schichten im Netzwerk anpassen
+- `--timeframe 1D`: Zeitintervall der Daten (1Min, 5Min, 15Min, 1H, 4H, 1D)
+- `--lookback 365`: Anzahl der Zeiteinheiten aus der Vergangenheit
 
 ### Backtesting
 
@@ -80,6 +90,19 @@ python main.py --symbol BTC/USD --episodes 300 --lr 0.0001 --use-lstm
 ```
 
 Führt den kompletten Workflow aus: Datenerfassung, Training und Backtesting.
+
+Beispiele für verschiedene Zeitrahmen:
+
+```
+# Training mit 5-Minuten-Daten der letzten 1000 Zeitpunkte
+python main.py --symbol BTC/USD --timeframe 5Min --lookback 1000 --episodes 300 --use-lstm
+
+# Training mit Stundendaten der letzten 720 Stunden (30 Tage)
+python main.py --symbol ETH/USD --timeframe 1H --lookback 720 --episodes 200 --use-lstm
+
+# Training mit Tagesdaten der letzten 90 Tage
+python main.py --symbol AAPL --timeframe 1D --lookback 90 --episodes 150 --use-lstm
+```
 
 Optionen für `main.py`:
 - `--mode train`: Nur Training ausführen
@@ -150,12 +173,16 @@ Die Ergebnisse werden im `results`-Verzeichnis als PNG-Dateien gespeichert.
 - **LSTM verwenden**: Bessere Erkennung von Zeitmustern in den Marktdaten
 - **Fenstergröße anpassen**: Größere Fenster (15-30) für langfristigere Muster
 - **Hyperparameter-Tuning**: Verschiedene Kombinationen von Gamma und Lernrate testen
+- **GPU-Beschleunigung**: Verwende CUDA für erheblich schnelleres Training
+- **Zeitrahmenanpassung**: Für kurzfristige Strategien Minuten-Daten, für langfristige Tages-Daten
 
 ## Fehlerbehebung
 
 - **Dimension Error**: Bei Dimension-Fehlern sicherstellen, dass die Eingabedimension des Netzwerks mit der Observation-Dimension der Umgebung übereinstimmt
 - **Extreme Schwankungen**: Bei extremen Schwankungen im Training die Lernrate reduzieren und das Gradient Clipping verstärken
 - **API-Fehler**: Sicherstellen, dass die Alpaca API-Schlüssel korrekt konfiguriert sind und das gewünschte Symbol unterstützt wird
+- **CUDA-Probleme**: Bei GPU-Fehlern sicherstellen, dass PyTorch mit der richtigen CUDA-Version installiert ist
+- **Out of Memory**: Bei Speicherfehlern die Batch-Größe reduzieren oder auf eine GPU mit mehr VRAM wechseln
 
 ## Erweiterungsmöglichkeiten
 
@@ -164,6 +191,7 @@ Die Ergebnisse werden im `results`-Verzeichnis als PNG-Dateien gespeichert.
 - **Multi-Asset Portfolio**: Gleichzeitiges Handeln mehrerer Assets
 - **Risikomanagement**: Dynamische Position Sizing basierend auf Volatilität
 - **Sentimentanalyse**: Integration von Marktsentiment aus Nachrichten und sozialen Medien
+- **Transformer-Modelle**: Implementierung von Attention-basierten Netzwerken für noch bessere Zeitmustererkennung
 
 ## Lizenz
 

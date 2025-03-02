@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 from utils.alpaca_api import AlpacaAPI
 from config.config import config
 
@@ -16,19 +17,37 @@ class DataLoader:
         """
         self.api = api or AlpacaAPI()
 
-    def load_historical_data(self, symbol=None, timeframe=None, start_date=None, end_date=None):
+    def load_historical_data(self, symbol=None, timeframe=None, lookback=None, start_date=None, end_date=None):
         """
         Lädt historische Daten und bereitet sie vor.
 
         Args:
             symbol: Aktien- oder Krypto-Symbol
-            timeframe: Zeitintervall
-            start_date: Startdatum
-            end_date: Enddatum
+            timeframe: Zeitintervall ('1Min', '5Min', '15Min', '1H', '4H', '1D')
+            lookback: Anzahl der Zeiteinheiten aus der Vergangenheit
+            start_date: Startdatum (optional, hat Vorrang vor lookback)
+            end_date: Enddatum (optional)
 
         Returns:
             DataFrame mit vorverarbeiteten Daten
         """
+        # Standardwerte aus Konfiguration laden, falls nicht angegeben
+        timeframe = timeframe or config.get("trading", "timeframe", "1D")
+
+        # Start-Datum basierend auf lookback berechnen, falls angegeben
+        if start_date is None and lookback is not None:
+            end_date = end_date or datetime.now()
+            if timeframe == '1D':
+                start_date = end_date - timedelta(days=lookback)
+            elif timeframe.endswith('H'):  # 1H, 4H etc.
+                # Stundenzahl aus dem Timeframe extrahieren
+                hours_factor = int(timeframe.replace('H', ''))
+                start_date = end_date - timedelta(hours=lookback * hours_factor)
+            else:  # Minutenbasis
+                # Minutenzahl aus dem Timeframe extrahieren
+                minutes_factor = int(timeframe.replace('Min', ''))
+                start_date = end_date - timedelta(minutes=lookback * minutes_factor)
+
         # Daten von Alpaca holen
         df = self.api.get_historical_data(symbol, timeframe, start_date, end_date)
 

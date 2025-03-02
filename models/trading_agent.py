@@ -5,6 +5,7 @@ from torch.distributions import Categorical
 import numpy as np
 import os
 import random
+import time
 
 from models.actor_critic import ActorCriticNetwork, LSTMActorCritic
 
@@ -33,8 +34,18 @@ class TradingAgent:
         self.gamma = gamma
         self.use_lstm = use_lstm
 
-        # GPU verwenden, falls verfügbar
+        # GPU-Optimierungen wenn verfügbar
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            # Optimierungen für CUDA
+            torch.backends.cudnn.benchmark = True
+            if self.use_lstm:
+                # LSTM kann mit deterministic=True effizienter sein auf CUDA
+                torch.backends.cudnn.deterministic = True
+
+            print(f"TradingAgent wird auf {self.device} mit CUDA-Optimierungen initialisiert")
+        else:
+            print(f"TradingAgent wird auf {self.device} initialisiert")
 
         # Netzwerk erstellen (Actor-Critic oder LSTM)
         if use_lstm:
@@ -42,7 +53,7 @@ class TradingAgent:
         else:
             self.network = ActorCriticNetwork(input_dim, n_actions, hidden_dim).to(self.device)
 
-        # Optimizer
+        # Optimizer mit grad clipping
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
 
         # Speicher für Episodendaten
@@ -55,6 +66,13 @@ class TradingAgent:
             'entropy_losses': [],
             'total_losses': []
         }
+
+        # Modell-Performance-Statistiken
+        self.cuda_stats = {
+            'forward_time': [],
+            'backward_time': [],
+            'memory_usage': []
+        } if torch.cuda.is_available() else None
 
     def reset_memory(self):
         """Setzt den Speicher für eine neue Episode zurück."""
@@ -78,6 +96,13 @@ class TradingAgent:
         Returns:
             int: Gewählte Aktion
         """
+        # GPU-Monitoring Variablen initialisieren
+        start_memory = None
+        # GPU-Monitoring, falls aktiviert
+        if self.cuda_stats and training and random.random() < 0.05:  # Nur für 5% der Aufrufe tracken
+            if torch.cuda.is_available():
+                start_memory = torch.cuda.memory_allocated() / 1024 ** 2
+
         # Zustand in Tensor umwandeln
         state_tensor = torch.FloatTensor(state).to(self.device)
 
@@ -85,9 +110,21 @@ class TradingAgent:
         if len(state_tensor.shape) == 1:
             state_tensor = state_tensor.unsqueeze(0)
 
+        # Zeit für Forward-Pass messen, falls CUDA-Tracking aktiviert
+        start_time = time.time() if self.cuda_stats and training else None
+
         # Forward Pass durch das Netzwerk
         with torch.set_grad_enabled(training):
             action_probs, state_value = self.network(state_tensor)
+
+        # CUDA-Statistiken aktualisieren
+        if self.cuda_stats and training and start_time and random.random() < 0.05:
+            forward_time = time.time() - start_time
+            self.cuda_stats['forward_time'].append(forward_time * 1000)  # in ms
+
+            if torch.cuda.is_available() and start_memory is not None:  # Prüfen ob start_memory initialisiert wurde
+                current_memory = torch.cuda.memory_allocated() / 1024 ** 2
+                self.cuda_stats['memory_usage'].append(current_memory - start_memory)
 
         # Im Trainingsmodus: Aktion stochastisch wählen
         if training:
@@ -137,6 +174,9 @@ class TradingAgent:
         if len(self.rewards) == 0:
             return 0.0
 
+        # CUDA-Monitoring
+        start_time = time.time() if self.cuda_stats else None
+
         # Bootstrap-Value berechnen, wenn Episode nicht beendet ist
         next_value = 0
         if not done and next_state is not None:
@@ -169,6 +209,11 @@ class TradingAgent:
         # Actor (Policy) Loss: maximiere erwarteten Reward
         actor_loss = -(log_probs * advantages).mean()
 
+        if state_values.shape != returns.shape:
+            if len(state_values.shape) == 0:  # Skalar
+                state_values = state_values.unsqueeze(0)  # Füge eine Dimension hinzu
+            elif len(returns.shape) == 0:  # Skalar
+                returns = returns.unsqueeze(0)  # Füge eine Dimension hinzu
         # Critic (Value) Loss: minimiere Fehler in der Wertschätzung
         critic_loss = nn.MSELoss()(state_values, returns)
 
@@ -180,12 +225,21 @@ class TradingAgent:
 
         # Optimiere das Netzwerk
         self.optimizer.zero_grad()
+
+        # Zeit für Backward-Pass messen
+        backward_start = time.time() if self.cuda_stats else None
+
         loss.backward()
 
         # Gradient Clipping (verhindert zu große Updates)
         nn.utils.clip_grad_norm_(self.network.parameters(), max_norm=0.1)
 
         self.optimizer.step()
+
+        # CUDA-Statistiken für Backward-Pass aktualisieren
+        if self.cuda_stats and backward_start:
+            backward_time = time.time() - backward_start
+            self.cuda_stats['backward_time'].append(backward_time * 1000)  # in ms
 
         # Speichere Statistiken
         self.training_stats['actor_losses'].append(actor_loss.item())
@@ -195,6 +249,19 @@ class TradingAgent:
 
         # Speicher zurücksetzen
         self.reset_memory()
+
+        # CUDA-Synchronisierung, um genaue Timings zu gewährleisten
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        # Gesamtzeit für Update berechnen
+        if self.cuda_stats and start_time:
+            total_time = time.time() - start_time
+            if len(self.cuda_stats['forward_time']) > 100:  # Begrenze Statistik-Größe
+                # Entferne älteste Einträge
+                self.cuda_stats['forward_time'] = self.cuda_stats['forward_time'][-100:]
+                self.cuda_stats['backward_time'] = self.cuda_stats['backward_time'][-100:]
+                self.cuda_stats['memory_usage'] = self.cuda_stats['memory_usage'][-100:]
 
         return loss.item()
 
@@ -219,12 +286,34 @@ class TradingAgent:
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
         # Speichere Modell und Optimierungszustand
-        torch.save({
+        save_dict = {
             'model_state_dict': self.network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'training_stats': self.training_stats,
             'use_lstm': self.use_lstm
-        }, path)
+        }
+
+        # Füge CUDA-Statistiken hinzu, falls vorhanden
+        if self.cuda_stats:
+            cuda_avg_stats = {
+                'avg_forward_ms': np.mean(self.cuda_stats['forward_time']) if self.cuda_stats['forward_time'] else 0,
+                'avg_backward_ms': np.mean(self.cuda_stats['backward_time']) if self.cuda_stats['backward_time'] else 0,
+                'avg_memory_mb': np.mean(self.cuda_stats['memory_usage']) if self.cuda_stats['memory_usage'] else 0
+            }
+            save_dict['cuda_stats'] = cuda_avg_stats
+
+        # Speichern mit Fehlerbehandlung
+        try:
+            torch.save(save_dict, path)
+            print(f"Modell erfolgreich gespeichert: {path}")
+
+            if self.cuda_stats and self.cuda_stats['forward_time']:
+                print(f"CUDA Performance: Forward {np.mean(self.cuda_stats['forward_time']):.2f}ms, "
+                      f"Backward {np.mean(self.cuda_stats['backward_time']):.2f}ms, "
+                      f"Memory Usage: {np.mean(self.cuda_stats['memory_usage']):.2f}MB")
+
+        except Exception as e:
+            print(f"Fehler beim Speichern des Modells: {e}")
 
     def load(self, path):
         """
@@ -232,13 +321,18 @@ class TradingAgent:
 
         Args:
             path: Pfad zum gespeicherten Modell
+
+        Returns:
+            bool: True wenn erfolgreich, False sonst
         """
         if not os.path.exists(path):
             print(f"Warnung: Modellpfad existiert nicht: {path}")
             return False
 
         try:
-            checkpoint = torch.load(path, map_location=self.device)
+            # Lade auf CPU, falls keine GPU verfügbar ist
+            map_location = self.device
+            checkpoint = torch.load(path, map_location=map_location)
 
             # Prüfe, ob das geladene Modell mit der aktuellen Konfiguration kompatibel ist
             if checkpoint.get('use_lstm', False) != self.use_lstm:
@@ -254,11 +348,20 @@ class TradingAgent:
             if 'training_stats' in checkpoint:
                 self.training_stats = checkpoint['training_stats']
 
+            # Zeige CUDA-Statistiken, falls vorhanden
+            if 'cuda_stats' in checkpoint:
+                cuda_stats = checkpoint['cuda_stats']
+                print(f"Geladene CUDA-Performance: Forward {cuda_stats.get('avg_forward_ms', 0):.2f}ms, "
+                      f"Backward {cuda_stats.get('avg_backward_ms', 0):.2f}ms, "
+                      f"Memory Usage: {cuda_stats.get('avg_memory_mb', 0):.2f}MB")
+
             print(f"Modell erfolgreich geladen: {path}")
             return True
 
         except Exception as e:
             print(f"Fehler beim Laden des Modells: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def get_training_stats(self):
@@ -268,4 +371,41 @@ class TradingAgent:
         Returns:
             dict: Trainingsstatistiken
         """
-        return self.training_stats
+        stats = self.training_stats.copy()
+
+        # Füge CUDA-Statistiken hinzu, falls vorhanden
+        if self.cuda_stats:
+            stats['cuda'] = {
+                'forward_time_ms': np.mean(self.cuda_stats['forward_time']) if self.cuda_stats['forward_time'] else 0,
+                'backward_time_ms': np.mean(self.cuda_stats['backward_time']) if self.cuda_stats[
+                    'backward_time'] else 0,
+                'memory_usage_mb': np.mean(self.cuda_stats['memory_usage']) if self.cuda_stats['memory_usage'] else 0
+            }
+
+        return stats
+
+    def print_cuda_info(self):
+        """Gibt Informationen zur CUDA-Nutzung aus."""
+        if not torch.cuda.is_available():
+            print("CUDA ist nicht verfügbar.")
+            return
+
+        print("\n=== CUDA-Informationen ===")
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"Speichernutzung: {torch.cuda.memory_allocated() / 1024 ** 2:.2f} MB / "
+              f"{torch.cuda.get_device_properties(0).total_memory / 1024 ** 3:.2f} GB")
+
+        if self.cuda_stats:
+            if self.cuda_stats['forward_time']:
+                print(f"Durchschnittliche Forward-Zeit: {np.mean(self.cuda_stats['forward_time']):.2f} ms")
+            if self.cuda_stats['backward_time']:
+                print(f"Durchschnittliche Backward-Zeit: {np.mean(self.cuda_stats['backward_time']):.2f} ms")
+            if self.cuda_stats['memory_usage']:
+                print(
+                    f"Durchschnittliche Speichernutzung pro Operation: {np.mean(self.cuda_stats['memory_usage']):.2f} MB")
+
+        # Zeige Modellstatistiken an
+        total_params = sum(p.numel() for p in self.network.parameters())
+        trainable_params = sum(p.numel() for p in self.network.parameters() if p.requires_grad)
+        print(f"Modellparameter: {total_params:,} gesamt, {trainable_params:,} trainierbar")
+        print("=" * 30)

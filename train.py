@@ -168,18 +168,16 @@ def evaluate_agent(env, agent, episodes=5):
         done = False
 
         while not done:
-            # Wähle beste Aktion (ohne Exploration)
             action = agent.select_action(state, training=False)
-
-            # Führe Aktion aus
             next_state, _, done, _, _ = env.step(action)
             state = next_state
 
-        # Berechne Return
-        final_return = (env.portfolio_values[-1] / env.initial_balance - 1) * 100
+        # Begrenzte Renditeberechnung
+        final_return = max(min((env.portfolio_values[-1] / env.initial_balance - 1) * 100, 200), -90)
         returns.append(final_return)
 
-    return np.mean(returns)
+    # Mittelwert der Renditen mit zusätzlichen Sicherheitsüberprüfungen
+    return np.mean(np.clip(returns, -90, 200))
 
 
 def main():

@@ -1,0 +1,32 @@
+{
+  "api": {
+    "alpaca": {
+      "api_key": "PKLZKA6O0B9MTB5OEMG4",
+      "api_secret": "UmRlUu8lNd09nOq9ycjtt9bNUDenGJcNVY1d5bJ2",
+      "base_url": "https://paper-api.alpaca.markets"
+    }
+  },
+  "trading": {
+    "symbol": "BTC/USD",
+    "timeframe": "1D",
+    "initial_balance": 10000,
+    "commission": 0.001
+  },
+  "model": {
+    "window_size": 10,
+    "hidden_dim": 128,
+    "learning_rate": 0.0003,
+    "gamma": 0.99
+  },
+  "training": {
+    "episodes": 100,
+    "eval_every": 10,
+    "save_path": "saved_models"
+  },
+  "backtesting": {
+    "lookback_days": 365
+  },
+  "visualization": {
+    "save_path": "results"
+  }
+}

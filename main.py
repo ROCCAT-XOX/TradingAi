@@ -10,6 +10,12 @@ from environment.trading_env import TradingEnvironment
 from utils.visualizer import visualize_training, visualize_backtest
 from train import train_trading_agent
 from backtest import run_backtest
+import torch
+
+print(f"CUDA verfügbar: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Anzahl GPUs: {torch.cuda.device_count()}")
 
 
 def parse_args():

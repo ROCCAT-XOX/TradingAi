@@ -104,6 +104,11 @@ def parse_args():
                         choices=['1Min', '5Min', '15Min', '1H', '4H', '1D'],
                         help='Zeitintervall der Daten (1Min, 5Min, 15Min, 1H, 4H, 1D)')
 
+    parser.add_argument('--patience', type=int, default=20,
+                        help='Anzahl der Evaluierungen ohne Verbesserung, bevor Training stoppt')
+    parser.add_argument('--min-delta', type=float, default=0.01,
+                        help='Minimale Verbesserung für Early Stopping')
+
     return parser.parse_args()
 
 
@@ -191,7 +196,9 @@ def main():
         print("\n=== Starte Training ===")
         training_params = {
             'episodes': episodes,
-            'eval_every': config_instance.get("training", "eval_every", 10)
+            'eval_every': config_instance.get("training", "eval_every", 10),
+            'patience': args.patience if hasattr(args, 'patience') else 20,
+            'min_delta': args.min_delta if hasattr(args, 'min_delta') else 0.01
         }
 
         try:

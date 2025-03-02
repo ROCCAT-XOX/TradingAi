@@ -115,6 +115,24 @@ Das System funktioniert mit allen von Alpaca Markets unterstützten Assets:
 - Kryptowährungen: BTC/USD, ETH/USD, SOL/USD, etc.
 - Aktien: AAPL, MSFT, GOOGL, etc.
 
+## Early-Stopping Funktionalität
+
+Das System verfügt über eine integrierte Early-Stopping-Strategie, die das Training automatisch beendet, wenn keine signifikante Verbesserung mehr erzielt wird. Diese Funktion verhindert Überanpassung und spart Rechenressourcen.
+
+### Parameter für Early-Stopping:
+
+- `--patience 20`: Anzahl der Evaluierungen ohne Verbesserung, bevor das Training stoppt
+- `--min-delta 0.01`: Minimale Verbesserung (in %) des Returns, die als signifikant gilt
+
+### Beispiele:
+
+```bash
+# Training mit strengerem Early-Stopping (stoppt schneller)
+python main.py --symbol BTC/USD --episodes 500 --patience 10 --min-delta 0.5 --use-lstm
+
+# Training mit großzügigem Early-Stopping (mehr Zeit für Verbesserungen)
+python main.py --symbol ETH/USD --episodes 1000 --patience 30 --min-delta 0.01 --use-lstm
+
 ## Optimierte Handelsstrategien
 
 Die aktuelle Implementierung verwendet folgende Handelsstrategien:
@@ -125,7 +143,8 @@ Die aktuelle Implementierung verwendet folgende Handelsstrategien:
 - **Belohnungsoptimierung**: Gezielte Anreize für gewinnbringende Verkäufe und moderater Abzug für Käufe
 
 ## Projektstruktur
-
+````
+Beim Training wird das beste Modell automatisch gespeichert und am Ende des Trainings geladen, unabhängig davon, ob Early-Stopping aktiviert wurde oder nicht. Dadurch wird sichergestellt, dass immer mit dem leistungsfähigsten Modell gearbeitet wird.
 ```
 trading_ai_project/
 │
@@ -192,6 +211,18 @@ Die Ergebnisse werden im `results`-Verzeichnis als PNG-Dateien gespeichert.
 - **Risikomanagement**: Dynamische Position Sizing basierend auf Volatilität
 - **Sentimentanalyse**: Integration von Marktsentiment aus Nachrichten und sozialen Medien
 - **Transformer-Modelle**: Implementierung von Attention-basierten Netzwerken für noch bessere Zeitmustererkennung
+
+## Beispiel
+````
+python main.py --symbol SOL/USD --timeframe 1D --lookback 30 --episodes 100 --use-lstm --patience 15 --min-delta 0.1
+````
+Dieser Befehl:
+
+- Nutzt Solana als Trading-Symbol (SOL/USD) Verwendet tägliche Kursdaten (1D)
+- Lädt Daten der letzten 30 Tage (lookback 30)
+- Trainiert für maximal 100 Episoden (episodes 100)
+- Verwendet das LSTM-Netzwerk für bessere Zeitmuster-Erkennung (use-lstm)
+- Beendet das Training, wenn nach 15 Evaluierungen keine Verbesserung von mindestens 0,1% erzielt wird (patience 15, min-delta 0.1)
 
 ## Lizenz
 

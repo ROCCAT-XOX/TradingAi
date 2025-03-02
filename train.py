@@ -47,10 +47,15 @@ def parse_args():
     parser.add_argument('--save-path', type=str, default='saved_models',
                         help='Pfad zum Speichern des Modells')
 
+    parser.add_argument('--patience', type=int, default=20,
+                        help='Anzahl der Evaluierungen ohne Verbesserung, bevor Training stoppt')
+    parser.add_argument('--min-delta', type=float, default=0.01,
+                        help='Minimale Verbesserung für Early Stopping')
+
     return parser.parse_args()
 
 
-def train_trading_agent(env, agent, episodes=100, eval_every=10, model_path=None):
+def train_trading_agent(env, agent, episodes=100, eval_every=10, model_path=None, patience=20, min_delta=0.01):
     """
     Trainiert den Trading-Agenten und verfolgt Fortschritte.
 
@@ -60,6 +65,8 @@ def train_trading_agent(env, agent, episodes=100, eval_every=10, model_path=None
         episodes: Anzahl der Trainingsepisoden
         eval_every: Nach wie vielen Episoden Evaluierung durchgeführt wird
         model_path: Pfad zum Speichern des besten Modells
+        patience: Anzahl der Evaluierungen ohne Verbesserung, bevor Training stoppt
+        min_delta: Minimale Verbesserung, die als signifikant gilt
 
     Returns:
         dict: Trainingsverlauf
@@ -71,6 +78,7 @@ def train_trading_agent(env, agent, episodes=100, eval_every=10, model_path=None
     }
 
     best_return = -np.inf
+    no_improvement_count = 0
 
     for episode in tqdm(range(episodes), desc="Training RL-Agent"):
         state, _ = env.reset()
@@ -116,11 +124,27 @@ def train_trading_agent(env, agent, episodes=100, eval_every=10, model_path=None
 
             print(f"Evaluierung nach Episode {episode + 1}: Return = {eval_return:.2f}%")
 
-            # Speichere bestes Modell
-            if eval_return > best_return and model_path is not None:
+            # Early Stopping Logik
+            if eval_return > best_return + min_delta:
                 best_return = eval_return
-                agent.save(model_path)
-                print(f"Neues bestes Modell gespeichert mit Return: {eval_return:.2f}%")
+                no_improvement_count = 0
+
+                # Speichere bestes Modell
+                if model_path is not None:
+                    agent.save(model_path)
+                    print(f"Neues bestes Modell gespeichert mit Return: {eval_return:.2f}%")
+            else:
+                no_improvement_count += 1
+                print(f"Keine Verbesserung seit {no_improvement_count} Evaluierungen")
+
+                if no_improvement_count >= patience:
+                    print(f"Early Stopping nach {episode + 1} Episoden")
+                    break
+
+    # Lade das beste Modell, falls vorhanden
+    if model_path is not None and os.path.exists(model_path):
+        agent.load(model_path)
+        print(f"Bestes Modell aus Training geladen: {model_path}")
 
     return training_history
 

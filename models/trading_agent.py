@@ -332,7 +332,7 @@ class TradingAgent:
         try:
             # Lade auf CPU, falls keine GPU verfügbar ist
             map_location = self.device
-            checkpoint = torch.load(path, map_location=map_location)
+            checkpoint = torch.load(path, map_location=map_location, weights_only=False)
 
             # Prüfe, ob das geladene Modell mit der aktuellen Konfiguration kompatibel ist
             if checkpoint.get('use_lstm', False) != self.use_lstm:

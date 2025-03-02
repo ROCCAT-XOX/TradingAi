@@ -29,6 +29,21 @@ def parse_args():
     parser.add_argument('--config', type=str,
                         help='Pfad zur Konfigurationsdatei')
 
+    parser.add_argument('--lr', type=float,
+                        help='Lernrate für das Training')
+
+    parser.add_argument('--gamma', type=float,
+                        help='Discount-Faktor für zukünftige Belohnungen')
+
+    parser.add_argument('--use-lstm', action='store_true',
+                        help='LSTM-Netzwerk verwenden')
+
+    parser.add_argument('--hidden-dim', type=int,
+                        help='Dimension der versteckten Schichten')
+
+    parser.add_argument('--window-size', type=int,
+                        help='Größe des Beobachtungsfensters')
+
     return parser.parse_args()
 
 
@@ -49,6 +64,13 @@ def main():
     # Episodenanzahl überschreiben, falls angegeben
     episodes = args.episodes or config_instance.get("training", "episodes", 100)
 
+    # Weitere Parameter aus Argumenten oder Konfiguration
+    lr = args.lr or config_instance.get("model", "learning_rate", 0.0003)
+    gamma = args.gamma or config_instance.get("model", "gamma", 0.99)
+    use_lstm = args.use_lstm or config_instance.get("model", "use_lstm", False)
+    hidden_dim = args.hidden_dim or config_instance.get("model", "hidden_dim", 128)
+    window_size = args.window_size or config_instance.get("model", "window_size", 10)
+
     # Verzeichnisse erstellen
     save_path = config_instance.get("training", "save_path", "saved_models")
     results_path = config_instance.get("visualization", "save_path", "results")
@@ -57,6 +79,8 @@ def main():
     os.makedirs(results_path, exist_ok=True)
 
     print(f"=== Trading AI für {symbol} ===")
+    print(f"Parameter: LR={lr}, Gamma={gamma}, LSTM={use_lstm}, Hidden Dim={hidden_dim}")
+    print(f"Window Size={window_size}, Episodes={episodes}")
 
     # Alpaca API initialisieren
     api = AlpacaAPI()
@@ -69,27 +93,32 @@ def main():
         print(f"Keine Daten für {symbol} gefunden. Beende Programm.")
         return
 
-    # Trading Environment und Agent initialisieren
+    # Trading Environment initialisieren
     env_params = {
         'initial_balance': config_instance.get("trading", "initial_balance", 10000),
         'commission': config_instance.get("trading", "commission", 0.001),
-        'window_size': config_instance.get("model", "window_size", 10)
+        'window_size': window_size
     }
 
     env = TradingEnvironment(df, **env_params)
 
+    print(f"Observation dimension: {env.obs_dim}")
+
+    # Agent initialisieren mit korrekter Dimension
     agent_params = {
-        'input_dim': env_params['window_size'] + 2,  # Preishistorie + Balance + Position
-        'n_actions': 3,  # Halten, Kaufen, Verkaufen
-        'lr': config_instance.get("model", "learning_rate", 0.0003),
-        'gamma': config_instance.get("model", "gamma", 0.99),
-        'hidden_dim': config_instance.get("model", "hidden_dim", 128)
+        'input_dim': env.obs_dim,
+        'n_actions': 3,
+        'lr': lr,
+        'gamma': gamma,
+        'use_lstm': use_lstm,
+        'hidden_dim': hidden_dim
     }
 
     agent = TradingAgent(**agent_params)
 
     # Modelldatei
-    model_path = Path(save_path) / f"{symbol.replace('/', '_')}_model.pth"
+    model_suffix = "lstm" if use_lstm else "mlp"
+    model_path = Path(save_path) / f"{symbol.replace('/', '_')}_{model_suffix}_model.pth"
 
     # Training durchführen
     if args.mode in ['train', 'all']:
@@ -99,14 +128,20 @@ def main():
             'eval_every': config_instance.get("training", "eval_every", 10)
         }
 
-        history = train_trading_agent(env, agent, model_path=model_path, **training_params)
+        try:
+            history = train_trading_agent(env, agent, model_path=model_path, **training_params)
 
-        # Ergebnisse visualisieren
-        visualize_training(
-            history,
-            symbol,
-            save_path=Path(results_path) / f"{symbol.replace('/', '_')}_training.png"
-        )
+            # Ergebnisse visualisieren
+            visualize_training(
+                history,
+                symbol,
+                save_path=Path(results_path) / f"{symbol.replace('/', '_')}_training.png"
+            )
+        except Exception as e:
+            print(f"Fehler während des Trainings: {e}")
+            import traceback
+            traceback.print_exc()
+            return
 
     # Backtesting durchführen
     if args.mode in ['backtest', 'all']:
@@ -121,15 +156,20 @@ def main():
                 print("Bitte führe zuerst das Training durch oder gib einen gültigen Modellpfad an.")
                 return
 
-        results = run_backtest(df, agent, env_params)
+        try:
+            results = run_backtest(df, agent, env_params)
 
-        # Ergebnisse visualisieren
-        visualize_backtest(
-            df,
-            results,
-            symbol,
-            save_path=Path(results_path) / f"{symbol.replace('/', '_')}_backtest.png"
-        )
+            # Ergebnisse visualisieren
+            visualize_backtest(
+                df,
+                results,
+                symbol,
+                save_path=Path(results_path) / f"{symbol.replace('/', '_')}_backtest.png"
+            )
+        except Exception as e:
+            print(f"Fehler während des Backtestings: {e}")
+            import traceback
+            traceback.print_exc()
 
     print("\n=== Programm abgeschlossen ===")
 

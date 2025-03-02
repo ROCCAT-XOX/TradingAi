@@ -183,7 +183,7 @@ class TradingAgent:
         loss.backward()
 
         # Gradient Clipping (verhindert zu große Updates)
-        nn.utils.clip_grad_norm_(self.network.parameters(), max_norm=0.5)
+        nn.utils.clip_grad_norm_(self.network.parameters(), max_norm=0.1)
 
         self.optimizer.step()
 

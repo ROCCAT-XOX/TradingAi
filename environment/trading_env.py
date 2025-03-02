@@ -199,9 +199,9 @@ class TradingEnvironment(gym.Env):
         current_price = self.current_price()
 
         if action == 1:  # Kaufen
-            # Kaufe nur einen Teil des verfügbaren Kapitals (20%)
+            # Kaufe nur einen Teil des verfügbaren Kapitals (10% statt 20%)
             max_shares = self.balance // (current_price * (1 + self.commission))
-            buy_shares = max(1, int(max_shares * 0.2))  # Mindestens 1 Anteil, maximal 20% des möglichen
+            buy_shares = max(1, int(max_shares * 0.1))  # Reduziert von 0.2 auf 0.1
 
             if buy_shares > 0:
                 self.shares += buy_shares
@@ -219,8 +219,8 @@ class TradingEnvironment(gym.Env):
 
         elif action == 2:  # Verkaufen
             if self.shares > 0:
-                # Verkaufe 50% der Anteile statt alle
-                sell_shares = max(1, int(self.shares * 0.5))
+                # Verkaufe 30% der Anteile statt 50%
+                sell_shares = max(1, int(self.shares * 0.3))  # Reduziert von 0.5 auf 0.3
                 sell_price = current_price * (1 - self.commission)
                 gain = sell_shares * sell_price
                 self.balance += gain
@@ -250,20 +250,21 @@ class TradingEnvironment(gym.Env):
         # Grundlegende prozentuale Änderung
         pct_change = (current_value / prev_value) - 1
 
-        # Skaliere die Belohnung, um sie bedeutsamer zu machen
-        scaled_reward = pct_change * 100  # Multiplikation mit 100 macht aus 0.01 → 1.0
+        # Moderatere Skalierung
+        scaled_reward = pct_change * 50  # Reduziert von 100 auf 50
 
-        # Füge Handelsanreize hinzu
+        # Reduzierte Handelsanreize
         if self.trades and self.trades[-1]['step'] == self.current_step:
             last_trade = self.trades[-1]
             if last_trade['type'] == 'buy':
-                # Kleiner Abzug für Käufe, um unnötiges Handeln zu vermeiden
-                scaled_reward -= 0.1
+                # Kleinerer Abzug für Käufe
+                scaled_reward -= 0.05  # Reduziert von 0.1 auf 0.05
             elif last_trade['type'] == 'sell' and pct_change > 0:
-                # Bonus für gewinnbringende Verkäufe
-                scaled_reward += 0.5
+                # Kleinerer Bonus für gewinnbringende Verkäufe
+                scaled_reward += 0.2  # Reduziert von 0.5 auf 0.2
 
-        return scaled_reward
+        # Clippen, um extreme Werte zu vermeiden
+        return np.clip(scaled_reward, -10.0, 10.0)  # Neue Zeile
 
     def current_price(self):
         """
